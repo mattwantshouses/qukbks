@@ -1,5 +1,5 @@
 # Quckbks_colab Script
-# Version 1.0.0
+# Version 1.1.0
 
 import os
 import re
@@ -10,152 +10,166 @@ import datetime
 import io
 import chardet
 import openpyxl
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.naive_bayes import MultinomialNB
+from sklearn.model_selection import train_test_split
 
-# 1. File Selection: Enhanced file selection with better error handling
-def select_files():
-    """
-    1.1 Function: select_files
-    Handles file selection and upload process with improved error handling
-    """
-    print("Available files in the Colab environment:")
-    file_list = os.listdir()
-    for i, file in enumerate(file_list, 1):
-        print(f"{i}. {file}")
-    
-    while True:
-        print("\nEnter file numbers to process (e.g., '1-3, 5, 7-9') or type 'upload' to add new files:")
-        selection = input().lower()
-        
-        if selection == 'upload':
-            try:
-                uploaded = files.upload()
-                file_list.extend(uploaded.keys())
-                print("Updated file list:")
-                for i, file in enumerate(file_list, 1):
-                    print(f"{i}. {file}")
-                continue
-            except Exception as e:
-                print(f"Error uploading files: {str(e)}")
-                continue
-        
-        try:
-            selected_files = []
-            for part in re.split(r'[;,]\s*', selection):
-                if '-' in part:
-                    start, end = map(int, part.split('-'))
-                    selected_files.extend(file_list[start-1:end])
-                else:
-                    selected_files.append(file_list[int(part)-1])
-            return selected_files
-        except (ValueError, IndexError):
-            print("Invalid selection. Please try again.")
+# ... (previous functions remain the same)
 
-# 2. Entity Recognition: Improved entity recognition with custom entity support
-def identify_entity(filename):
+# 4. Transaction Classification: Enhanced classification system
+def train_classifier(transactions_df):
     """
-    2.1 Function: identify_entity
-    Identifies entity based on filename with support for custom entities
+    4.1 Function: train_classifier
+    Trains a Naive Bayes classifier for transaction categorization
     """
-    entities = {
-        "Corporate1": "C1",
-        "Corporate2": "C2",
-        "Corporate3": "C3",
-        "Personal": "P",
-        "BOA": "BOA",
-        "VyStar": "VS"
-    }
+    X = transactions_df['Description']
+    y = transactions_df['Category']
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
     
-    for entity, abbr in entities.items():
-        if entity.lower() in filename.lower():
-            return entity, abbr
+    vectorizer = TfidfVectorizer(stop_words='english')
+    X_train_vectorized = vectorizer.fit_transform(X_train)
     
-    print(f"Unable to identify entity for {filename}.")
-    print("Enter the entity name or choose from the following options:")
-    for i, (entity, abbr) in enumerate(entities.items(), 1):
-        print(f"{i}. {entity} ({abbr})")
-    print(f"{len(entities) + 1}. Other (custom entity)")
+    classifier = MultinomialNB()
+    classifier.fit(X_train_vectorized, y_train)
     
-    while True:
-        try:
-            choice = int(input("Enter your choice: "))
-            if 1 <= choice <= len(entities):
-                return list(entities.items())[choice - 1]
-            elif choice == len(entities) + 1:
-                custom_entity = input("Enter custom entity name: ")
-                custom_abbr = input("Enter custom entity abbreviation: ")
-                return custom_entity, custom_abbr
-            else:
-                print("Invalid choice. Please try again.")
-        except ValueError:
-            print("Invalid input. Please enter a number.")
+    return vectorizer, classifier
 
-# 3. File Parsing: Enhanced file parsing with support for various formats and encodings
-def parse_file(file):
+def classify_transactions(df, vectorizer, classifier):
     """
-    3.1 Function: parse_file
-    Parses file into a DataFrame based on file type with improved format support
+    4.2 Function: classify_transactions
+    Classifies transactions using the trained classifier
     """
-    _, ext = os.path.splitext(file)
+    X = df['Description']
+    X_vectorized = vectorizer.transform(X)
+    df['Category'] = classifier.predict(X_vectorized)
+    return df
+
+# 5. Chart of Accounts: Integration and management
+class ChartOfAccounts:
+    def __init__(self):
+        self.accounts = {
+            'Assets': {'Cash': 1000, 'Accounts Receivable': 1100},
+            'Liabilities': {'Accounts Payable': 2000},
+            'Equity': {'Retained Earnings': 3000},
+            'Income': {'Sales': 4000},
+            'Expenses': {'Office Supplies': 5000, 'Rent': 5100, 'Utilities': 5200}
+        }
     
-    try:
-        if ext.lower() in ['.csv', '.txt']:
-            # Detect file encoding
-            with open(file, 'rb') as raw_file:
-                encoding = chardet.detect(raw_file.read())['encoding']
-            
-            # Detect delimiter
-            with open(file, 'r', encoding=encoding) as f:
-                sample = f.read(1024)
-            sniffer = csv.Sniffer()
-            dialect = sniffer.sniff(sample)
-            
-            # Read CSV with detected encoding and delimiter
-            df = pd.read_csv(file, encoding=encoding, dialect=dialect)
-        elif ext.lower() in ['.xls', '.xlsx']:
-            df = pd.read_excel(file, engine='openpyxl')
-        else:
-            raise ValueError(f"Unsupported file type: {ext}")
-        
-        # Flexible column detection
-        required_columns = ['Date', 'Description', 'Amount']
-        column_mapping = {}
-        
-        for required_col in required_columns:
-            possible_names = [required_col] + [col for col in df.columns if required_col.lower() in col.lower()]
-            for name in possible_names:
-                if name in df.columns:
-                    column_mapping[required_col] = name
-                    break
-            else:
-                raise ValueError(f"Could not find a column for {required_col}")
-        
-        # Rename columns and select only required ones
-        df = df.rename(columns=column_mapping)[required_columns]
-        
-        # Ensure date column is in datetime format
-        df['Date'] = pd.to_datetime(df['Date'], infer_datetime_format=True, errors='coerce')
-        
-        # Ensure amount column is numeric
-        df['Amount'] = pd.to_numeric(df['Amount'].astype(str).str.replace(r'[^\d.-]', '', regex=True), errors='coerce')
-        
-        return df
+    def add_account(self, category, name, number):
+        if category not in self.accounts:
+            self.accounts[category] = {}
+        self.accounts[category][name] = number
     
-    except Exception as e:
-        print(f"Error parsing file {file}: {str(e)}")
+    def get_account_number(self, name):
+        for category in self.accounts:
+            if name in self.accounts[category]:
+                return self.accounts[category][name]
         return None
 
-# ... (rest of the code remains the same)
+# 6. Double-Entry Bookkeeping: Implementation
+def process_transaction(ledger, date, description, category, account, amount):
+    """
+    6.1 Function: process_transaction
+    Processes a transaction using double-entry bookkeeping
+    """
+    if amount > 0:  # Income
+        ledger = ledger.append({
+            'Date': date,
+            'Description': description,
+            'Account': account,
+            'Debit': amount,
+            'Credit': 0
+        }, ignore_index=True)
+        ledger = ledger.append({
+            'Date': date,
+            'Description': description,
+            'Account': category,
+            'Debit': 0,
+            'Credit': amount
+        }, ignore_index=True)
+    else:  # Expense
+        ledger = ledger.append({
+            'Date': date,
+            'Description': description,
+            'Account': category,
+            'Debit': abs(amount),
+            'Credit': 0
+        }, ignore_index=True)
+        ledger = ledger.append({
+            'Date': date,
+            'Description': description,
+            'Account': account,
+            'Debit': 0,
+            'Credit': abs(amount)
+        }, ignore_index=True)
+    return ledger
 
-# 11. Main Execution: Enhanced main function with improved error handling
+# 7. Inter-Entity Transfers: Handling transfers between entities
+def inter_entity_transfer(from_entity, to_entity, amount, description):
+    """
+    7.1 Function: inter_entity_transfer
+    Handles transfers between different entities
+    """
+    from_entity['ledger'] = process_transaction(
+        from_entity['ledger'],
+        datetime.date.today(),
+        description,
+        'Inter-Entity Transfer',
+        'Cash',
+        -amount
+    )
+    to_entity['ledger'] = process_transaction(
+        to_entity['ledger'],
+        datetime.date.today(),
+        description,
+        'Inter-Entity Transfer',
+        'Cash',
+        amount
+    )
+
+# 8. Financial Reporting: Generate basic financial reports
+def generate_profit_and_loss(ledger, start_date, end_date):
+    """
+    8.1 Function: generate_profit_and_loss
+    Generates a basic Profit and Loss statement
+    """
+    filtered_ledger = ledger[(ledger['Date'] >= start_date) & (ledger['Date'] <= end_date)]
+    income = filtered_ledger[filtered_ledger['Account'] == 'Income']['Debit'].sum() - filtered_ledger[filtered_ledger['Account'] == 'Income']['Credit'].sum()
+    expenses = filtered_ledger[filtered_ledger['Account'] == 'Expenses']['Debit'].sum() - filtered_ledger[filtered_ledger['Account'] == 'Expenses']['Credit'].sum()
+    net_profit = income - expenses
+    return pd.DataFrame({
+        'Item': ['Income', 'Expenses', 'Net Profit'],
+        'Amount': [income, expenses, net_profit]
+    })
+
+# 9. Data Export: Functions to export processed data
+def export_chart_of_accounts(entity_abbr, coa):
+    """
+    9.1 Function: export_chart_of_accounts
+    Exports the Chart of Accounts to a CSV file
+    """
+    coa_df = pd.DataFrame([(cat, acct, num) for cat, accounts in coa.accounts.items() for acct, num in accounts.items()],
+                          columns=['Category', 'Account', 'Number'])
+    coa_df.to_csv(f'{entity_abbr}_chart_of_accounts.csv', index=False)
+
+def export_profit_and_loss(entity_abbr, pl_df):
+    """
+    9.2 Function: export_profit_and_loss
+    Exports the Profit and Loss statement to a CSV file
+    """
+    pl_df.to_csv(f'{entity_abbr}_profit_and_loss.csv', index=False)
+
+# 10. Main Execution: Enhanced main function with improved error handling
 def main():
     """
-    11.1 Function: main
+    10.1 Function: main
     Main execution function for the Financial Data Processor with improved error handling
     """
-    print("Enhanced Financial Data Processor v1.0.0")
+    print("Enhanced Financial Data Processor v1.1.0")
     selected_files = select_files()
     
     entities = {}
+    all_transactions = pd.DataFrame()
 
     for file in selected_files:
         print(f"\nProcessing file: {file}")
@@ -173,32 +187,36 @@ def main():
         df = parse_file(file)
         if df is not None:
             try:
-                df = classify_transactions(df)
-                df = add_helper_columns(df)
+                all_transactions = pd.concat([all_transactions, df], ignore_index=True)
                 entities[entity_name]['transactions'] = pd.concat([entities[entity_name]['transactions'], df], ignore_index=True)
                 print(f"Successfully processed file. Shape: {df.shape}")
                 print(df.head())
-
-                # Process transactions into the ledger
-                for _, row in df.iterrows():
-                    entities[entity_name]['ledger'] = process_transaction(
-                        entities[entity_name]['ledger'],
-                        row['Date'],
-                        row['Description'],
-                        row['Category'],
-                        'Cash',  # Assuming all transactions affect cash for simplicity
-                        row['Amount']
-                    )
-
-                # Generate and export Chart of Accounts
-                export_chart_of_accounts(entity_abbr, entities[entity_name]['coa'])
-
-                # Generate and export Profit and Loss statement
-                pl_df = generate_profit_and_loss(entities[entity_name]['ledger'], df['Date'].min(), df['Date'].max())
-                export_profit_and_loss(entity_abbr, pl_df)
-
             except Exception as e:
                 print(f"Error processing data for {file}: {str(e)}")
+
+    # Train the classifier using all transactions
+    vectorizer, classifier = train_classifier(all_transactions)
+
+    for entity_name, entity_data in entities.items():
+        entity_data['transactions'] = classify_transactions(entity_data['transactions'], vectorizer, classifier)
+        
+        # Process transactions into the ledger
+        for _, row in entity_data['transactions'].iterrows():
+            entity_data['ledger'] = process_transaction(
+                entity_data['ledger'],
+                row['Date'],
+                row['Description'],
+                row['Category'],
+                'Cash',  # Assuming all transactions affect cash for simplicity
+                row['Amount']
+            )
+
+        # Generate and export Chart of Accounts
+        export_chart_of_accounts(entity_data['abbr'], entity_data['coa'])
+
+        # Generate and export Profit and Loss statement
+        pl_df = generate_profit_and_loss(entity_data['ledger'], entity_data['transactions']['Date'].min(), entity_data['transactions']['Date'].max())
+        export_profit_and_loss(entity_data['abbr'], pl_df)
 
     # Example of inter-entity transfer (if multiple entities exist)
     if len(entities) > 1:
