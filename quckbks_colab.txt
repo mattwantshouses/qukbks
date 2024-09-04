@@ -1,5 +1,5 @@
 # Quckbks_colab Script
-# Version 1.2.0
+# Version 1.3.0
 
 import os
 import re
@@ -13,184 +13,59 @@ import openpyxl
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.naive_bayes import MultinomialNB
 from sklearn.model_selection import train_test_split
+import json
+import xml.etree.ElementTree as ET
 
 # ... (previous functions remain the same)
 
-# 4. Transaction Classification: Enhanced classification system
-def train_classifier(transactions_df):
+# 9. Data Export: Enhanced functions to export processed data
+def export_to_csv(data, filename):
     """
-    4.1 Function: train_classifier
-    Trains a Naive Bayes classifier for transaction categorization
+    9.1 Function: export_to_csv
+    Exports data to a CSV file
     """
-    X = transactions_df['Description']
-    y = transactions_df['Category']
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
-    
-    vectorizer = TfidfVectorizer(stop_words='english')
-    X_train_vectorized = vectorizer.fit_transform(X_train)
-    
-    classifier = MultinomialNB()
-    classifier.fit(X_train_vectorized, y_train)
-    
-    return vectorizer, classifier
+    data.to_csv(filename, index=False)
+    print(f"Data exported to {filename}")
 
-def classify_transactions(df, vectorizer, classifier):
+def export_to_qbo(ledger, filename):
     """
-    4.2 Function: classify_transactions
-    Classifies transactions using the trained classifier
+    9.2 Function: export_to_qbo
+    Exports ledger data to QBO format
     """
-    X = df['Description']
-    X_vectorized = vectorizer.transform(X)
-    df['Category'] = classifier.predict(X_vectorized)
-    return df
+    root = ET.Element("QBOXML")
+    transactions = ET.SubElement(root, "TRANSACTIONS")
+    
+    for _, row in ledger.iterrows():
+        trans = ET.SubElement(transactions, "TRANSACTION")
+        ET.SubElement(trans, "DATE").text = row['Date'].strftime("%Y-%m-%d")
+        ET.SubElement(trans, "AMOUNT").text = str(row['Debit'] - row['Credit'])
+        ET.SubElement(trans, "MEMO").text = row['Description']
+        ET.SubElement(trans, "ACCOUNT").text = row['Account']
+    
+    tree = ET.ElementTree(root)
+    tree.write(filename, encoding="UTF-8", xml_declaration=True)
+    print(f"Data exported to {filename}")
 
-# 5. Chart of Accounts: Integration and management
-class ChartOfAccounts:
-    def __init__(self):
-        self.accounts = {
-            'Assets': {'Cash': 1000, 'Accounts Receivable': 1100},
-            'Liabilities': {'Accounts Payable': 2000},
-            'Equity': {'Retained Earnings': 3000},
-            'Income': {'Sales': 4000},
-            'Expenses': {'Office Supplies': 5000, 'Rent': 5100, 'Utilities': 5200}
-        }
-    
-    def add_account(self, category, name, number):
-        if category not in self.accounts:
-            self.accounts[category] = {}
-        self.accounts[category][name] = number
-    
-    def get_account_number(self, name):
-        for category in self.accounts:
-            if name in self.accounts[category]:
-                return self.accounts[category][name]
-        return None
+def export_to_json(data, filename):
+    """
+    9.3 Function: export_to_json
+    Exports data to a JSON file
+    """
+    data.to_json(filename, orient='records', date_format='iso')
+    print(f"Data exported to {filename}")
 
-# 6. Double-Entry Bookkeeping: Implementation
-def process_transaction(ledger, date, description, category, account, amount):
-    """
-    6.1 Function: process_transaction
-    Processes a transaction using double-entry bookkeeping
-    """
-    if amount > 0:  # Income
-        ledger = ledger.append({
-            'Date': date,
-            'Description': description,
-            'Account': account,
-            'Debit': amount,
-            'Credit': 0
-        }, ignore_index=True)
-        ledger = ledger.append({
-            'Date': date,
-            'Description': description,
-            'Account': category,
-            'Debit': 0,
-            'Credit': amount
-        }, ignore_index=True)
-    else:  # Expense
-        ledger = ledger.append({
-            'Date': date,
-            'Description': description,
-            'Account': category,
-            'Debit': abs(amount),
-            'Credit': 0
-        }, ignore_index=True)
-        ledger = ledger.append({
-            'Date': date,
-            'Description': description,
-            'Account': account,
-            'Debit': 0,
-            'Credit': abs(amount)
-        }, ignore_index=True)
-    return ledger
-
-# 7. Inter-Entity Transfers: Handling transfers between entities
-def inter_entity_transfer(from_entity, to_entity, amount, description):
-    """
-    7.1 Function: inter_entity_transfer
-    Handles transfers between different entities
-    """
-    from_entity['ledger'] = process_transaction(
-        from_entity['ledger'],
-        datetime.date.today(),
-        description,
-        'Inter-Entity Transfer',
-        'Cash',
-        -amount
-    )
-    to_entity['ledger'] = process_transaction(
-        to_entity['ledger'],
-        datetime.date.today(),
-        description,
-        'Inter-Entity Transfer',
-        'Cash',
-        amount
-    )
-
-# 8. Financial Reporting: Generate comprehensive financial reports
-def generate_profit_and_loss(ledger, start_date, end_date):
-    """
-    8.1 Function: generate_profit_and_loss
-    Generates a detailed Profit and Loss statement
-    """
-    filtered_ledger = ledger[(ledger['Date'] >= start_date) & (ledger['Date'] <= end_date)]
-    income = filtered_ledger[filtered_ledger['Account'].str.startswith('Income')]['Credit'].sum() - filtered_ledger[filtered_ledger['Account'].str.startswith('Income')]['Debit'].sum()
-    expenses = filtered_ledger[filtered_ledger['Account'].str.startswith('Expenses')]['Debit'].sum() - filtered_ledger[filtered_ledger['Account'].str.startswith('Expenses')]['Credit'].sum()
-    net_profit = income - expenses
-    
-    income_breakdown = filtered_ledger[filtered_ledger['Account'].str.startswith('Income')].groupby('Account').agg({'Credit': 'sum', 'Debit': 'sum'})
-    income_breakdown['Net'] = income_breakdown['Credit'] - income_breakdown['Debit']
-    
-    expense_breakdown = filtered_ledger[filtered_ledger['Account'].str.startswith('Expenses')].groupby('Account').agg({'Debit': 'sum', 'Credit': 'sum'})
-    expense_breakdown['Net'] = expense_breakdown['Debit'] - expense_breakdown['Credit']
-    
-    return {
-        'Summary': pd.DataFrame({
-            'Item': ['Income', 'Expenses', 'Net Profit'],
-            'Amount': [income, expenses, net_profit]
-        }),
-        'Income Breakdown': income_breakdown,
-        'Expense Breakdown': expense_breakdown
-    }
-
-def generate_balance_sheet(ledger, date):
-    """
-    8.2 Function: generate_balance_sheet
-    Generates a Balance Sheet as of a specific date
-    """
-    filtered_ledger = ledger[ledger['Date'] <= date]
-    
-    assets = filtered_ledger[filtered_ledger['Account'].str.startswith('Assets')].groupby('Account').agg({'Debit': 'sum', 'Credit': 'sum'})
-    assets['Balance'] = assets['Debit'] - assets['Credit']
-    
-    liabilities = filtered_ledger[filtered_ledger['Account'].str.startswith('Liabilities')].groupby('Account').agg({'Credit': 'sum', 'Debit': 'sum'})
-    liabilities['Balance'] = liabilities['Credit'] - liabilities['Debit']
-    
-    equity = filtered_ledger[filtered_ledger['Account'].str.startswith('Equity')].groupby('Account').agg({'Credit': 'sum', 'Debit': 'sum'})
-    equity['Balance'] = equity['Credit'] - equity['Debit']
-    
-    return {
-        'Assets': assets,
-        'Liabilities': liabilities,
-        'Equity': equity,
-        'Total Assets': assets['Balance'].sum(),
-        'Total Liabilities': liabilities['Balance'].sum(),
-        'Total Equity': equity['Balance'].sum()
-    }
-
-# 9. Data Export: Functions to export processed data
 def export_chart_of_accounts(entity_abbr, coa):
     """
-    9.1 Function: export_chart_of_accounts
+    9.4 Function: export_chart_of_accounts
     Exports the Chart of Accounts to a CSV file
     """
     coa_df = pd.DataFrame([(cat, acct, num) for cat, accounts in coa.accounts.items() for acct, num in accounts.items()],
                           columns=['Category', 'Account', 'Number'])
-    coa_df.to_csv(f'{entity_abbr}_chart_of_accounts.csv', index=False)
+    export_to_csv(coa_df, f'{entity_abbr}_chart_of_accounts.csv')
 
 def export_financial_reports(entity_abbr, pl_data, bs_data):
     """
-    9.2 Function: export_financial_reports
+    9.5 Function: export_financial_reports
     Exports the Profit and Loss statement and Balance Sheet to Excel files
     """
     with pd.ExcelWriter(f'{entity_abbr}_financial_reports.xlsx') as writer:
@@ -201,14 +76,48 @@ def export_financial_reports(entity_abbr, pl_data, bs_data):
         pd.DataFrame({'Assets': bs_data['Assets']['Balance'],
                       'Liabilities': bs_data['Liabilities']['Balance'],
                       'Equity': bs_data['Equity']['Balance']}).to_excel(writer, sheet_name='Balance Sheet')
+    print(f"Financial reports exported to {entity_abbr}_financial_reports.xlsx")
 
-# 10. Main Execution: Enhanced main function with improved error handling and financial analysis
+# 10. Data Consistency Checks
+def perform_consistency_checks(ledger, transactions):
+    """
+    10.1 Function: perform_consistency_checks
+    Performs various data consistency checks
+    """
+    checks = {
+        "Total debits equal total credits": ledger['Debit'].sum() == ledger['Credit'].sum(),
+        "Transaction count matches ledger entries": len(transactions) * 2 == len(ledger),
+        "No negative amounts in transactions": (transactions['Amount'] >= 0).all(),
+        "All dates are valid": (pd.to_datetime(transactions['Date'], errors='coerce').notnull()).all()
+    }
+    
+    for check, result in checks.items():
+        print(f"{check}: {'Passed' if result else 'Failed'}")
+    
+    return all(checks.values())
+
+# 11. Performance Optimizations
+def optimize_dataframes(df):
+    """
+    11.1 Function: optimize_dataframes
+    Optimizes DataFrame memory usage
+    """
+    for col in df.columns:
+        if df[col].dtype == 'object':
+            df[col] = pd.Categorical(df[col])
+        elif df[col].dtype == 'float64':
+            df[col] = pd.to_numeric(df[col], downcast='float')
+        elif df[col].dtype == 'int64':
+            df[col] = pd.to_numeric(df[col], downcast='integer')
+    return df
+
+# 12. Main Execution: Enhanced main function with improved error handling, financial analysis, and export options
 def main():
     """
-    10.1 Function: main
-    Main execution function for the Financial Data Processor with improved error handling and financial analysis
+    12.1 Function: main
+    Main execution function for the Financial Data Processor with improved error handling, financial analysis, and export options
     """
-    print("Enhanced Financial Data Processor v1.2.0")
+    print("Enhanced Financial Data Processor v1.3.0")
     selected_files = select_files()
     
     entities = {}
@@ -230,6 +139,7 @@ def main():
         df = parse_file(file)
         if df is not None:
             try:
+                df = optimize_dataframes(df)  # Optimize DataFrame
                 all_transactions = pd.concat([all_transactions, df], ignore_index=True)
                 entities[entity_name]['transactions'] = pd.concat([entities[entity_name]['transactions'], df], ignore_index=True)
                 print(f"Successfully processed file. Shape: {df.shape}")
@@ -259,6 +169,12 @@ def main():
                 row['Amount']
             )
 
+        # Perform data consistency checks
+        if perform_consistency_checks(entity_data['ledger'], entity_data['transactions']):
+            print("All consistency checks passed.")
+        else:
+            print("Warning: Some consistency checks failed. Please review the data.")
+
         # Generate and export Chart of Accounts
         export_chart_of_accounts(entity_data['abbr'], entity_data['coa'])
 
@@ -270,6 +186,11 @@ def main():
 
         # Export financial reports
         export_financial_reports(entity_data['abbr'], pl_data, bs_data)
+
+        # Export data in various formats
+        export_to_csv(entity_data['transactions'], f"{entity_data['abbr']}_transactions.csv")
+        export_to_qbo(entity_data['ledger'], f"{entity_data['abbr']}_ledger.qbo")
+        export_to_json(entity_data['transactions'], f"{entity_data['abbr']}_transactions.json")
 
         # Print summary of financial reports
         print(f"\nFinancial Summary for {entity_name}:")
