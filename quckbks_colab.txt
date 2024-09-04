@@ -1,5 +1,5 @@
 # Quckbks_colab Script
-# Version 1.1.0
+# Version 1.2.0
 
 import os
 import re
@@ -127,20 +127,56 @@ def inter_entity_transfer(from_entity, to_entity, amount, description):
         amount
     )
 
-# 8. Financial Reporting: Generate basic financial reports
+# 8. Financial Reporting: Generate comprehensive financial reports
 def generate_profit_and_loss(ledger, start_date, end_date):
     """
     8.1 Function: generate_profit_and_loss
-    Generates a basic Profit and Loss statement
+    Generates a detailed Profit and Loss statement
     """
     filtered_ledger = ledger[(ledger['Date'] >= start_date) & (ledger['Date'] <= end_date)]
-    income = filtered_ledger[filtered_ledger['Account'] == 'Income']['Debit'].sum() - filtered_ledger[filtered_ledger['Account'] == 'Income']['Credit'].sum()
-    expenses = filtered_ledger[filtered_ledger['Account'] == 'Expenses']['Debit'].sum() - filtered_ledger[filtered_ledger['Account'] == 'Expenses']['Credit'].sum()
+    income = filtered_ledger[filtered_ledger['Account'].str.startswith('Income')]['Credit'].sum() - filtered_ledger[filtered_ledger['Account'].str.startswith('Income')]['Debit'].sum()
+    expenses = filtered_ledger[filtered_ledger['Account'].str.startswith('Expenses')]['Debit'].sum() - filtered_ledger[filtered_ledger['Account'].str.startswith('Expenses')]['Credit'].sum()
     net_profit = income - expenses
-    return pd.DataFrame({
-        'Item': ['Income', 'Expenses', 'Net Profit'],
-        'Amount': [income, expenses, net_profit]
-    })
+    
+    income_breakdown = filtered_ledger[filtered_ledger['Account'].str.startswith('Income')].groupby('Account').agg({'Credit': 'sum', 'Debit': 'sum'})
+    income_breakdown['Net'] = income_breakdown['Credit'] - income_breakdown['Debit']
+    
+    expense_breakdown = filtered_ledger[filtered_ledger['Account'].str.startswith('Expenses')].groupby('Account').agg({'Debit': 'sum', 'Credit': 'sum'})
+    expense_breakdown['Net'] = expense_breakdown['Debit'] - expense_breakdown['Credit']
+    
+    return {
+        'Summary': pd.DataFrame({
+            'Item': ['Income', 'Expenses', 'Net Profit'],
+            'Amount': [income, expenses, net_profit]
+        }),
+        'Income Breakdown': income_breakdown,
+        'Expense Breakdown': expense_breakdown
+    }
+
+def generate_balance_sheet(ledger, date):
+    """
+    8.2 Function: generate_balance_sheet
+    Generates a Balance Sheet as of a specific date
+    """
+    filtered_ledger = ledger[ledger['Date'] <= date]
+    
+    assets = filtered_ledger[filtered_ledger['Account'].str.startswith('Assets')].groupby('Account').agg({'Debit': 'sum', 'Credit': 'sum'})
+    assets['Balance'] = assets['Debit'] - assets['Credit']
+    
+    liabilities = filtered_ledger[filtered_ledger['Account'].str.startswith('Liabilities')].groupby('Account').agg({'Credit': 'sum', 'Debit': 'sum'})
+    liabilities['Balance'] = liabilities['Credit'] - liabilities['Debit']
+    
+    equity = filtered_ledger[filtered_ledger['Account'].str.startswith('Equity')].groupby('Account').agg({'Credit': 'sum', 'Debit': 'sum'})
+    equity['Balance'] = equity['Credit'] - equity['Debit']
+    
+    return {
+        'Assets': assets,
+        'Liabilities': liabilities,
+        'Equity': equity,
+        'Total Assets': assets['Balance'].sum(),
+        'Total Liabilities': liabilities['Balance'].sum(),
+        'Total Equity': equity['Balance'].sum()
+    }
 
 # 9. Data Export: Functions to export processed data
 def export_chart_of_accounts(entity_abbr, coa):
@@ -152,20 +188,27 @@ def export_chart_of_accounts(entity_abbr, coa):
                           columns=['Category', 'Account', 'Number'])
     coa_df.to_csv(f'{entity_abbr}_chart_of_accounts.csv', index=False)
 
-def export_profit_and_loss(entity_abbr, pl_df):
+def export_financial_reports(entity_abbr, pl_data, bs_data):
     """
-    9.2 Function: export_profit_and_loss
-    Exports the Profit and Loss statement to a CSV file
+    9.2 Function: export_financial_reports
+    Exports the Profit and Loss statement and Balance Sheet to Excel files
     """
-    pl_df.to_csv(f'{entity_abbr}_profit_and_loss.csv', index=False)
+    with pd.ExcelWriter(f'{entity_abbr}_financial_reports.xlsx') as writer:
+        pl_data['Summary'].to_excel(writer, sheet_name='P&L Summary', index=False)
+        pl_data['Income Breakdown'].to_excel(writer, sheet_name='P&L Income Breakdown')
+        pl_data['Expense Breakdown'].to_excel(writer, sheet_name='P&L Expense Breakdown')
+        
+        pd.DataFrame({'Assets': bs_data['Assets']['Balance'],
+                      'Liabilities': bs_data['Liabilities']['Balance'],
+                      'Equity': bs_data['Equity']['Balance']}).to_excel(writer, sheet_name='Balance Sheet')
 
-# 10. Main Execution: Enhanced main function with improved error handling
+# 10. Main Execution: Enhanced main function with improved error handling and financial analysis
 def main():
     """
     10.1 Function: main
-    Main execution function for the Financial Data Processor with improved error handling
+    Main execution function for the Financial Data Processor with improved error handling and financial analysis
     """
-    print("Enhanced Financial Data Processor v1.1.0")
+    print("Enhanced Financial Data Processor v1.2.0")
     selected_files = select_files()
     
     entities = {}
@@ -200,6 +243,11 @@ def main():
     for entity_name, entity_data in entities.items():
         entity_data['transactions'] = classify_transactions(entity_data['transactions'], vectorizer, classifier)
         
+        # Add helper columns for analysis
+        entity_data['transactions']['Month'] = pd.to_datetime(entity_data['transactions']['Date']).dt.to_period('M')
+        entity_data['transactions']['Quarter'] = pd.to_datetime(entity_data['transactions']['Date']).dt.to_period('Q')
+        entity_data['transactions']['Year'] = pd.to_datetime(entity_data['transactions']['Date']).dt.year
+        
         # Process transactions into the ledger
         for _, row in entity_data['transactions'].iterrows():
             entity_data['ledger'] = process_transaction(
@@ -214,9 +262,23 @@ def main():
         # Generate and export Chart of Accounts
         export_chart_of_accounts(entity_data['abbr'], entity_data['coa'])
 
-        # Generate and export Profit and Loss statement
-        pl_df = generate_profit_and_loss(entity_data['ledger'], entity_data['transactions']['Date'].min(), entity_data['transactions']['Date'].max())
-        export_profit_and_loss(entity_data['abbr'], pl_df)
+        # Generate financial reports
+        start_date = entity_data['transactions']['Date'].min()
+        end_date = entity_data['transactions']['Date'].max()
+        pl_data = generate_profit_and_loss(entity_data['ledger'], start_date, end_date)
+        bs_data = generate_balance_sheet(entity_data['ledger'], end_date)
+
+        # Export financial reports
+        export_financial_reports(entity_data['abbr'], pl_data, bs_data)
+
+        # Print summary of financial reports
+        print(f"\nFinancial Summary for {entity_name}:")
+        print("Profit and Loss Summary:")
+        print(pl_data['Summary'])
+        print("\nBalance Sheet Summary:")
+        print(f"Total Assets: {bs_data['Total Assets']}")
+        print(f"Total Liabilities: {bs_data['Total Liabilities']}")
+        print(f"Total Equity: {bs_data['Total Equity']}")
 
     # Example of inter-entity transfer (if multiple entities exist)
     if len(entities) > 1:
